@@ -1,0 +1,9 @@
+pandas
+scikit-learn
+numpy
+pydantic
+requests
+python-dotenv
+rich
+flask
+flask-cors

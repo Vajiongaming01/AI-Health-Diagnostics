@@ -1,0 +1,249 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>AI Health Diagnostics</title>
+  <style>
+    :root { --bg:#0b1220; --panel:#111827; --text:#e6eaf2; --muted:#9aa3b2; --primary:#7c5cff; --border:#1f2937; --radius:14px; }
+    body { margin:0; background: radial-gradient(1200px 600px at 10% -10%, rgba(124,92,255,.18), transparent 60%), radial-gradient(1000px 600px at 90% 10%, rgba(34,211,238,.12), transparent 60%), var(--bg); color:var(--text); font-family: Inter, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial; }
+    .container { max-width: 980px; margin: 24px auto; padding: 0 16px; }
+    .header { display:flex; justify-content:space-between; align-items:center; padding:16px; background: rgba(255,255,255,.04); border:1px solid var(--border); border-radius: var(--radius); }
+    .title { margin:0; font-size: 20px; font-weight: 800; }
+    .subtitle { margin:4px 0 0; color: var(--muted); font-size: 13px; }
+    .panel { background: rgba(255,255,255,.04); border:1px solid var(--border); border-radius: var(--radius); padding:16px; margin-top:16px; }
+    .grid { display:grid; grid-template-columns: repeat(12, 1fr); gap:12px; }
+    .field { grid-column: span 6; display:flex; flex-direction:column; gap:6px; }
+    .field.full { grid-column: 1 / -1; }
+    label { font-size:13px; color:var(--muted); font-weight:600; }
+    input, select, textarea { background:#0b1325; color:var(--text); border:1px solid var(--border); padding:10px 12px; border-radius: 12px; outline: none; }
+    textarea { min-height: 90px; }
+    .actions { display:flex; gap:10px; margin-top:8px; }
+    button { background: linear-gradient(180deg, var(--primary), #6a45ff); color:#fff; border:none; padding:10px 14px; border-radius: 12px; font-weight:700; cursor:pointer; }
+    button.ghost { background: transparent; border:1px solid var(--border); color: var(--text); }
+    .result { white-space: pre-wrap; background:#0b1325; border:1px solid var(--border); padding:14px; border-radius:12px; }
+    .disclaimer { color: var(--muted); font-size: 12px; margin-top: 8px; }
+    .probability-bar { height: 8px; background: #333; border-radius: 4px; margin: 8px 0; overflow: hidden; }
+    .probability-fill { height: 100%; background: var(--primary); }
+    .how-it-works { display: none; }
+    @media (max-width: 768px) { .field { grid-column: 1 / -1; } }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="header">
+      <div>
+        <h1 class="title">AI Health Diagnostics</h1>
+        <p class="subtitle">Powered by Machine Learning. Not a medical diagnosis.</p>
+      </div>
+      <div>Veronika API</div>
+    </div>
+
+    <div class="panel">
+      <form id="symptomForm">
+        <div class="grid">
+          <div class="field full">
+            <label for="symptoms">Symptoms</label>
+            <textarea id="symptoms" placeholder="e.g., fever, cough, fatigue, sore throat" required></textarea>
+          </div>
+          <div class="field">
+            <label for="duration">Duration (days)</label>
+            <input id="duration" type="number" min="0" placeholder="e.g., 3" />
+          </div>
+          <div class="field">
+            <label for="age">Age</label>
+            <input id="age" type="number" min="0" max="120" placeholder="e.g., 29" />
+          </div>
+          <div class="field">
+            <label for="sex">Biological Sex</label>
+            <select id="sex">
+              <option value="">Prefer not to say</option>
+              <option value="female">Female</option>
+              <option value="male">Male</option>
+            </select>
+          </div>
+        </div>
+        <div class="actions">
+          <button type="submit">Analyze</button>
+          <button type="button" class="ghost" id="resetBtn">Reset</button>
+          <button type="button" class="ghost" id="micBtn">🎤</button>
+        </div>
+        <p class="disclaimer">This tool provides educational, AI-assisted information and is not medical advice. For emergencies, call local emergency services. Always consult a licensed clinician.</p>
+      </form>
+    </div>
+
+    <div class="panel" id="resultsPanel" style="display:none;">
+      <h3>Most Likely Condition</h3>
+      <div id="summary"></div>
+      
+      <h3>Potential Conditions</h3>
+      <div id="conditionsList"></div>
+      
+      <div id="advisorySections"></div>
+    </div>
+
+    <div class="how-it-works">
+      <h3>How It Works</h3>
+      <p>This tool uses machine learning to analyze symptoms and provide potential diagnoses. The model was trained on a dataset of common conditions and their associated symptoms.</p>
+    </div>
+  </div>
+
+  <script>
+    const form = document.getElementById('symptomForm');
+    const resetBtn = document.getElementById('resetBtn');
+    const micBtn = document.getElementById('micBtn');
+    const resultsPanel = document.getElementById('resultsPanel');
+    const summaryEl = document.getElementById('summary');
+    const conditionsListEl = document.getElementById('conditionsList');
+    const advisorySectionsEl = document.getElementById('advisorySections');
+
+    // Speech recognition setup
+    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+    let recognition;
+    
+    if (SpeechRecognition) {
+      recognition = new SpeechRecognition();
+      recognition.continuous = false;
+      recognition.lang = 'en-US';
+      
+      recognition.onresult = (event) => {
+        const transcript = event.results[0][0].transcript;
+        const symptomsField = document.getElementById('symptoms');
+        symptomsField.value = symptomsField.value ? symptomsField.value + ' ' + transcript : transcript;
+      };
+      
+      recognition.onerror = (event) => {
+        alert('Speech recognition error: ' + event.error);
+      };
+    } else {
+      micBtn.disabled = true;
+      micBtn.title = 'Speech recognition not supported in this browser';
+    }
+
+    function startListening() {
+      if (recognition) {
+        recognition.start();
+      }
+    }
+
+    // Mock diagnosis function - replace with real API call
+    function mockDiagnose({ symptoms, age, sex, duration_days }) {
+      // Simple keyword-based mock scoring
+      const symptomsLower = symptoms.toLowerCase();
+      const conditions = [
+        { label: "Common Cold", prob: 0.3 },
+        { label: "Influenza", prob: 0.25 },
+        { label: "Allergic Rhinitis", prob: 0.2 },
+        { label: "COVID-19", prob: 0.15 },
+        { label: "Migraine", prob: 0.1 }
+      ];
+      
+      // Adjust probabilities based on symptoms
+      if (symptomsLower.includes('fever') && symptomsLower.includes('cough')) {
+        conditions[1].prob += 0.1; // Influenza
+        conditions[3].prob += 0.1; // COVID-19
+      }
+      
+      if (symptomsLower.includes('sneeze') || symptomsLower.includes('itchy')) {
+        conditions[2].prob += 0.15; // Allergic Rhinitis
+      }
+      
+      // Normalize probabilities
+      const total = conditions.reduce((sum, c) => sum + c.prob, 0);
+      conditions.forEach(c => c.prob = c.prob / total);
+      
+      // Sort by probability
+      conditions.sort((a, b) => b.prob - a.prob);
+      
+      return {
+        ranked: conditions,
+        explanation: {
+          severity: "mild",
+          duration: "3-7 days",
+          selfCare: [
+            "Rest and stay hydrated",
+            "Over-the-counter medications as needed",
+            "Monitor symptoms"
+          ],
+          redFlags: [
+            "Difficulty breathing",
+            "High fever",
+            "Severe headache"
+          ],
+          disclaimer: "This is not medical advice. Consult a healthcare professional for accurate diagnosis."
+        }
+      };
+    }
+
+    function renderResults(payload) {
+      resultsPanel.style.display = 'block';
+      
+      // Render summary
+      const topCondition = payload.ranked[0];
+      const notLikelyPercent = Math.round((1 - topCondition.prob) * 100);
+      summaryEl.innerHTML = `
+        <h2>${topCondition.label}</h2>
+        <div class="probability-bar">
+          <div class="probability-fill" style="width: ${Math.round(topCondition.prob * 100)}%"></div>
+        </div>
+        <p>${Math.round(topCondition.prob * 100)}% likely • ${notLikelyPercent}% not likely</p>
+      `;
+      
+      // Render conditions list
+      conditionsListEl.innerHTML = payload.ranked.slice(1).map(condition => `
+        <div>
+          <strong>${condition.label}</strong>
+          <div class="probability-bar">
+            <div class="probability-fill" style="width: ${Math.round(condition.prob * 100)}%"></div>
+          </div>
+          <p>${Math.round(condition.prob * 100)}% match</p>
+        </div>
+      `).join('');
+      
+      // Render advisory sections
+      const explanation = payload.explanation;
+      advisorySectionsEl.innerHTML = `
+        <h3>Severity: ${explanation.severity}</h3>
+        <h3>Expected Duration: ${explanation.duration}</h3>
+        <h3>Self-Care Recommendations</h3>
+        <ul>${explanation.selfCare.map(item => `<li>${item}</li>`).join('')}</ul>
+        <h3>Red Flags (Seek Medical Attention)</h3>
+        <ul>${explanation.redFlags.map(item => `<li>${item}</li>`).join('')}</ul>
+        <p><strong>Disclaimer:</strong> ${explanation.disclaimer}</p>
+      `;
+    }
+
+    form.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const payload = {
+        symptoms: document.getElementById('symptoms').value,
+        age: parseInt(document.getElementById('age').value) || 0,
+        sex: document.getElementById('sex').value,
+        duration_days: parseInt(document.getElementById('duration').value) || 0
+      };
+
+      try {
+        // Replace mockDiagnose with real API call when backend is ready
+        // const response = await fetch('/api/diagnose', {
+        //   method: 'POST',
+        //   headers: { 'Content-Type': 'application/json' },
+        //   body: JSON.stringify(payload)
+        // });
+        // const data = await response.json();
+        
+        const data = mockDiagnose(payload);
+        renderResults(data);
+      } catch (err) {
+        alert('Error: ' + err.message);
+      }
+    });
+
+    resetBtn.addEventListener('click', () => {
+      form.reset();
+      resultsPanel.style.display = 'none';
+    });
+
+    micBtn.addEventListener('click', startListening);
+  </script>
+</body>
+</html>
